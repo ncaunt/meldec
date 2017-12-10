@@ -34,22 +34,23 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"time"
-
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/examples/util"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	"github.com/google/gopacket/tcpassembly"
+	"io"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"time"
 )
 
-var iface = flag.String("i", "eth0", "Interface to get packets from")
+var port = flag.Int("p", 0, "TCP port on which to listen")
+var iface = flag.String("i", "", "Interface to get packets from")
 var fname = flag.String("r", "", "Filename to read from, overrides -i")
 var snaplen = flag.Int("s", 1600, "SnapLen for pcap packet capture")
 var filter = flag.String("f", "tcp and dst port 80", "BPF filter for pcap")
@@ -69,6 +70,7 @@ func (h *httpStream) run() {
 		req, err := http.ReadRequest(buf)
 		if err == io.EOF {
 			// We must read until we see an EOF... very important!
+			fmt.Printf("EOF when reading HTTP request\n")
 			return
 		} else if err != nil {
 			log.Println("Error reading stream", h.net, h.transport, ":", err)
@@ -87,11 +89,65 @@ func (h *httpStream) run() {
 	}
 }
 
-func foo() {
-	fmt.Println("I am foo")
+func main() {
+	flag.Parse()
+	if *port == 0 && *fname == "" && *iface == "" {
+		log.Fatal("one of -p, -i or -f must be specified")
+	}
+
+	init_mqtt()
+
+	if *port > 0 {
+		httpd()
+	} else {
+		packets()
+	}
 }
 
-func main() {
+func httpd() {
+	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		fmt.Printf("%s %s %s\n", req.Method, req.URL, req.Proto)
+		for name, vals := range req.Header {
+			for _, val := range vals {
+				fmt.Printf("%s: %s\n", name, val)
+			}
+		}
+
+		body := req.Body
+		var b1, b2 bytes.Buffer
+		wr := io.MultiWriter(&b1, &b2)
+		io.Copy(wr, body)
+
+		func() {
+			proxyReq, err := http.NewRequest(req.Method, req.RequestURI, &b2)
+
+			/*
+				if req.ContentLength < 1024 {
+					fmt.Printf("small request. body: %s\n", body2)
+				}
+			*/
+			client := &http.Client{}
+			resp, err := client.Do(proxyReq)
+			if err != nil {
+				log.Printf("proxy request failed: %s\n", err)
+				return
+			}
+			body, _ := ioutil.ReadAll(resp.Body)
+			fmt.Printf("response body: %s\n", string(body))
+			w.WriteHeader(resp.StatusCode)
+			w.Write(body)
+		}()
+		stat, err := decode(b1.Bytes())
+		if err != nil {
+			log.Println("error with stream", err)
+		}
+
+		fmt.Printf("%+v\n", stat)
+	})
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), nil))
+}
+
+func packets() {
 	defer util.Run()()
 	var handle *pcap.Handle
 	var err error
