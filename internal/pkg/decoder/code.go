@@ -1,16 +1,6 @@
-package main
+package decoder
 
-type Result struct {
-	LSV string `xml:",chardata"`
-}
-
-type Report struct {
-	Codes []struct {
-		Date string `xml:"DATDATE"`
-		Code []byte `xml:"VALUE"`
-	} `xml:"UPLOAD>CODE>DATA"`
-}
-
+/*
 type Code struct {
 	Preamble  [5]byte
 	GroupCode byte
@@ -28,17 +18,44 @@ type Code struct {
 	Checksum byte
 }
 
-type CodeAlt struct {
+type Code struct {
 	Preamble  [5]byte
 	GroupCode byte
-	Val1      int16
-	Val2      int16
-	Val3      int16
-	Val4      int16
-	Val5      int16
-	Val6      uint8
-	_         [4]byte
+	Data      [15]byte
 	Checksum  byte
+}
+
+func NewCode(c []byte) (nc *Code, err error) {
+	decoded := make([]byte, hex.DecodedLen(len(c)))
+	_, err = hex.Decode(decoded, c)
+	if err != nil {
+		return
+	}
+
+	if !verify_checksum(decoded, decoded[21]) {
+		err = errors.New("checksum invalid")
+		return
+	}
+
+	buf := bytes.NewBuffer(decoded)
+	nc = &Code{}
+	err = binary.Read(buf, binary.BigEndian, nc)
+	if err != nil {
+		return
+	}
+
+	return
+}
+*/
+
+type CodeAlt struct {
+	Val1 int16
+	Val2 int16
+	Val3 int16
+	Val4 int16
+	Val5 int16
+	Val6 uint8
+	_    [4]byte
 }
 
 type CodeAlt2 struct {
