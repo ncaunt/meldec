@@ -29,6 +29,7 @@ var groupCodes = map[byte]decoderfn{
 	0x14: groupCode14,
 	0x15: groupCode15,
 	0x26: groupCode26,
+	0x28: groupCode28,
 }
 
 var codeLen = 22 // length in bytes, when hex decoded
