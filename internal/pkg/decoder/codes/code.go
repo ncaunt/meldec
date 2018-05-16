@@ -34,6 +34,22 @@ var groupCodes = map[byte]decoderfn{
 var codeLen = 22 // length in bytes, when hex decoded
 
 func NewCode(c []byte) (nc Code, err error) {
+	cl := len(c)
+	if cl != codeLen {
+		err = fmt.Errorf("code length incorrect: %d", cl)
+		return
+	}
+	if !verify_checksum(c, c[codeLen-1]) {
+		err = fmt.Errorf("checksum invalid")
+		return
+	}
+
+	buf := bytes.NewBuffer(c)
+	err = binary.Read(buf, binary.BigEndian, &nc)
+	return
+}
+
+func NewCodeFromHex(c []byte) (nc Code, err error) {
 	decoded := make([]byte, hex.DecodedLen(len(c)))
 	n, err := hex.Decode(decoded, c)
 	if err != nil {
@@ -45,13 +61,7 @@ func NewCode(c []byte) (nc Code, err error) {
 		return
 	}
 
-	if !verify_checksum(decoded, decoded[codeLen-1]) {
-		err = fmt.Errorf("checksum invalid")
-		return
-	}
-
-	buf := bytes.NewBuffer(decoded)
-	err = binary.Read(buf, binary.BigEndian, &nc)
+	nc, err = NewCode(decoded)
 	return
 }
 
