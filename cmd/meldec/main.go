@@ -2,30 +2,21 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/ncaunt/meldec/internal/pkg/decoder"
 	"github.com/ncaunt/meldec/internal/pkg/decoder/codes"
+	"github.com/ncaunt/meldec/internal/pkg/doc"
+	"github.com/ncaunt/meldec/internal/pkg/reporter"
+	"github.com/ncaunt/meldec/internal/pkg/uploader"
 	"github.com/tarm/serial"
 )
 
-var port *serial.Port
-var m sync.Mutex
-
 func main() {
-
-	/*
-		init serial port + hp comms
-		loop
-			request data
-			decode
-			mqtt
-		end
-	*/
-
 	var err error
 	var serialDevice = flag.String("d", "/dev/ttyS0", "serial device (default /dev/ttyS0)")
 	var baud = flag.Int("b", 2400, "baud rate (default 2400)")
@@ -41,65 +32,129 @@ func main() {
 	}
 
 	c := &serial.Config{Name: *serialDevice, Baud: *baud, Parity: serial.ParityEven, ReadTimeout: to}
-	port, err = serial.OpenPort(c)
+	t, err := NewTTY(c)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error with serial configuration: %s", err)
 	}
 
-	/*
-		// XXX: apparently the melcloud unit sends these codes but I have not found it necessary
-		cmds := [][]byte{
-			{0x02, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x02},
-			{0x02, 0xff, 0xff, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00},
-			{0xfc, 0x5a, 0x02, 0x7a, 0x02, 0xca, 0x01, 0x5d},
-			{0xfc, 0x5b, 0x02, 0x7a, 0x01, 0xc9, 0x5f},
-			{0xfc, 0x41, 0x02, 0x7a, 0x10, 0x34, 0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0xfd},
-		}
+	r, err := reporter.NewMQTTReporter()
 
-		for _, x := range cmds {
-			_, err = send(x)
+	ticker := time.Tick(60 * time.Second)
+	u := uploader.NewHTTPUploader("http://leswifidata.meuk.mee.com/upload")
+	loop(ticker, t, r, u)
+}
+
+func loop(ticker <-chan time.Time, t SerialComm, r reporter.Reporter, u uploader.Uploader) {
+	t.Init()
+	d := decoder.NewDecoder()
+	gcs := []byte{
+		0x01,
+		0x02,
+		0x03,
+		0x04,
+		0x05,
+		0x06,
+		0x07,
+		0x09,
+		0x0b,
+		0x0c,
+		0x0d,
+		0x0e,
+		0x10,
+		0x11,
+		0x13,
+		0x14,
+		0x15,
+		0x16,
+		0x17,
+		0x18,
+		0x19,
+		0x1a,
+		0x1c,
+		0x1d,
+		0x1e,
+		0x1f,
+		0x20,
+		0x26,
+		0x27,
+		0x28,
+		0x29,
+		0xa1,
+		0xa2,
+	}
+
+	for range ticker {
+		u.Init()
+
+		// base packet
+		for _, i := range gcs {
+			pkt := []byte{0xfc, 0x42, 0x02, 0x7a, 0x10, i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+
+			// calc checksum
+			pkt[21] = sum(pkt[1:21])
+
+			// send packet and await response
+			c, err := t.Send(pkt)
 			if err != nil {
 				log.Fatal(err)
 			}
+
+			// HP might not return data for a groupcode so ignore it
+			if len(c) == 0 {
+				continue
+			}
+			log.Printf("received\t[% x]\n", c)
+			c2, err := codes.NewCode(c)
+			if err != nil {
+				log.Fatal(err)
+			}
+			stats, err := d.Decode(c2)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			err = u.AddCode(c2)
+			for _, s := range stats {
+				log.Printf("stat: %s=%s\n", s.Name, s.Value)
+				r.Publish(s)
+			}
+
 		}
 
-		var w sync.WaitGroup
-		defer w.Wait()
-		go keepalive([]byte{0xfc, 0x41, 0x02, 0x7a, 0x10, 0x34, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfe})
-		w.Add(1)
-	*/
-
-	d := decoder.NewDecoder()
-	go func(d decoder.Decoder) {
-		c := d.Stats()
-		for s := range c {
-			log.Printf("stat: %s\n", s)
-		}
-	}(d)
-
-	pkt := []byte{0xfc, 0x42, 0x02, 0x7a, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	for i := byte(0x01); i <= 0x2a; i++ {
-		pkt[5] = i
-		pkt[21] = sum(pkt[1:21])
-		c, err := send(pkt)
+		r, err := u.Send(handler)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("error sending HTTP request: %s\n", err)
+		}
+		//fmt.Printf("codes in response: %+v\n", r)
+		for _, change := range r {
+			// send packet and await response
+			codeBytes, err := change.ToBytes()
+			if err != nil {
+				log.Fatal(err)
+			}
+			c, err := t.Send(codeBytes)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("received\t[% x]\n", c)
 		}
 
-		// HP might not return data for a groupcode so ignore it
-		if len(c) == 0 {
-			continue
-		}
-		log.Printf("received [% x]\n", c)
-		c2, err := codes.NewCode(c)
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = d.Decode(c2)
-		if err != nil {
-			log.Fatal(err)
-		}
 	}
+}
+
+func handler(r io.Reader) (c []codes.Code, err error) {
+	body, _ := ioutil.ReadAll(r)
+	fmt.Printf("response: %s\n", string(body))
+	doc, err := doc.NewCSVDoc(body)
+	for _, rawCode := range doc.Codes {
+		code, err_ := codes.NewCodeFromHex(rawCode)
+		if err_ != nil {
+			err = err_
+			return
+		}
+		c = append(c, code)
+	}
+	return
 }
 
 func sum(data []byte) (s byte) {
@@ -110,48 +165,7 @@ func sum(data []byte) (s byte) {
 	return -total
 }
 
-func send(data []byte) (c []byte, err error) {
-	log.Printf("sending [% x]\n", data)
-	m.Lock()
-	defer func() {
-		m.Unlock()
-	}()
-	n, err := port.Write(data)
-	if err != nil {
-		return
-	}
-	_ = n
-
-	c = make([]byte, 0, 22)
-	buf := make([]byte, 0, 22)
-	//reader := bufio.NewReader(port)
-	//reply, err := reader.ReadBytes('\x00')
-	//nb := int(0)
-	for {
-		//log.Printf("reading up to %d bytes\n", cap(buf))
-		n, err = port.Read(buf[:cap(buf)])
-		buf = buf[:n]
-		//log.Printf("got %d bytes\n", n)
-		//log.Printf("len %d\n", len(buf))
-		//nb += n
-		//log.Printf("bytes %d\n", nb)
-		//log.Printf("received: [% x]\n", buf)
-		if n == 0 {
-			if err == nil {
-				continue
-			}
-			if err == io.EOF {
-				err = nil
-				break
-			}
-			return
-		}
-		c = append(c, buf[:n]...)
-	}
-	//log.Printf("received: [% x]\n", c)
-	return
-}
-
+/*
 func keepalive(c []byte) (err error) {
 	ticker := time.Tick(15 * time.Second)
 	for {
@@ -166,3 +180,4 @@ func keepalive(c []byte) (err error) {
 	}
 	return
 }
+*/

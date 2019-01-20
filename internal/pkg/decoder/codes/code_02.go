@@ -7,10 +7,10 @@ import (
 	"github.com/fatih/structs"
 )
 
-func groupCode03(b []byte) (m map[string]interface{}, err error) {
+func groupCode02(b []byte) (m map[string]interface{}, err error) {
 	var s struct {
-		_      [7]byte
-		Status int16 `structs:"status/group3"`
+		Code1 int8 `structs:"status/group2/Code1"`
+		Code2 int8 `structs:"status/group2/Code2"`
 	}
 	err = binary.Read(bytes.NewBuffer(b), binary.BigEndian, &s)
 	return structs.Map(s), err

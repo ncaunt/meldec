@@ -21,22 +21,6 @@ var verbose = flag.Bool("v", false, "verbose; show decoded values")
 func main() {
 	flag.Parse()
 	d := decoder.NewDecoder()
-	r, err := reporter.NewMQTTReporter()
-	if err != nil {
-		fmt.Errorf("failed to initialise MQTT client")
-		return
-	}
-
-	go func(d decoder.Decoder) {
-		c := d.Stats()
-		for s := range c {
-			if *verbose {
-				fmt.Printf("stat: %s\n", s)
-			}
-			r.Publish(s)
-		}
-	}(d)
-
 	// XXX: for testing
 	/*	go func() {
 			ticker := time.Tick(time.Second)
@@ -47,10 +31,16 @@ func main() {
 			}
 		}()
 	*/
-	httpd(d)
+	r, err := reporter.NewMQTTReporter()
+	if err != nil {
+		err = fmt.Errorf("failed to initialise MQTT client")
+		return
+	}
+
+	httpd(d, r)
 }
 
-func httpd(d decoder.Decoder) {
+func httpd(d decoder.Decoder, r reporter.Reporter) (err error) {
 	log.Printf("started httpd\n")
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		log.Printf("%s %s %s\n", req.Method, req.URL, req.Proto)
@@ -70,7 +60,6 @@ func httpd(d decoder.Decoder) {
 			proxyReq, err := http.NewRequest(req.Method, req.RequestURI, &b2)
 			if err != nil {
 				panic(err)
-				log.Printf("proxy request creation failed: %s\n", err)
 			}
 
 			/*
@@ -83,8 +72,6 @@ func httpd(d decoder.Decoder) {
 			resp, err := client.Do(proxyReq)
 			if err != nil {
 				panic(err)
-				log.Printf("proxy request failed: %s\n", err)
-				return
 			}
 			body, _ := ioutil.ReadAll(resp.Body)
 			fmt.Printf("response body: %s\n", string(body))
@@ -100,18 +87,24 @@ func httpd(d decoder.Decoder) {
 		}
 		log.Printf("1\n")
 		for _, c := range doc.Codes {
-			c2, err := codes.NewCode(c)
+			c2, err := codes.NewCodeFromHex(c)
 			if err != nil {
 				log.Print(err)
 				continue
 			}
 			log.Printf("c2: %+v\n", c2)
-			err = d.Decode(c2)
+			stats, err := d.Decode(c2)
 			if err != nil {
 				log.Print(err)
 			}
 			log.Printf("3\n")
+			for _, s := range stats {
+				log.Printf("stat: %s=%s\n", s.Name, s.Value)
+				r.Publish(s)
+			}
+
 		}
 	})
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), nil))
+	return
 }

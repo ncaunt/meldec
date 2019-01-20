@@ -14,18 +14,29 @@ import (
 	"github.com/ncaunt/meldec/internal/pkg/decoder/codes"
 )
 
-type dec struct {
-	stats chan interface{}
+/*type dec struct {
+	stats chan decoder.Stat
 }
 
-func (d *dec) Decode(c codes.Code) (err error) {
+func (d *dec) Decode(c codes.Code) (n int, err error) {
 	d.stats <- c
 	return
 }
 
 func (d *dec) Stats() (c chan decoder.Stat) {
 	return
+}*/
+
+type NullDecoder struct {
+	c chan interface{}
 }
+
+func (n *NullDecoder) Decode(c codes.Code) (s []decoder.Stat, err error) { n.c <- struct{}{}; return }
+func (n *NullDecoder) Stats() chan interface{}                           { return n.c }
+
+type NullReporter struct{}
+
+func (r *NullReporter) Publish(s decoder.Stat) {}
 
 func TestHttpd(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -33,8 +44,11 @@ func TestHttpd(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	d := &dec{stats: make(chan interface{})}
-	go httpd(d)
+	//d := &dec{stats: make(chan interface{})}
+	c := make(chan interface{})
+	d := &NullDecoder{c: c}
+	r := &NullReporter{}
+	go httpd(d, r)
 	time.Sleep(100 * time.Millisecond)
 
 	f, err := os.Open("../../examples/encoded_request_xml")
@@ -64,11 +78,22 @@ Cache-Control: no-cache
 	conn.Write([]byte(hdrs))
 	io.Copy(conn, f)
 
+	wait := time.Tick(10 * time.Second)
+
+	var expected = 31
+	var i = 0
+X:
 	// 31 codes are present in the test doc
-	for i := 0; i <= 31; i++ {
+	for {
 		select {
-		case y := <-d.stats:
+		case y := <-c:
 			t.Logf("got value: %+v\n", y)
+			i++
+			if i == expected {
+				break X
+			}
+		case <-wait:
+			t.Fatalf("expected %d codes but received %d\n", expected, i)
 		}
 	}
 }

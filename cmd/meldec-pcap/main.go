@@ -114,15 +114,14 @@ func main() {
 	d = decoder.NewDecoder()
 	r, err := reporter.NewMQTTReporter()
 	if err != nil {
-		fmt.Errorf("failed to initialise MQTT client")
-		return
+		log.Fatal("failed to initialise MQTT client")
 	}
 
 	go func(d *decoder.StatDecoder) {
 		c := d.Stats()
 		for s := range c {
 			if *verbose {
-				fmt.Println("stat: %s\n", s)
+				fmt.Printf("stat: %s\n", s)
 			}
 			r.Publish(s)
 		}

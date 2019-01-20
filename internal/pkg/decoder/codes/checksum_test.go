@@ -16,7 +16,7 @@ func TestChecksum(t *testing.T) {
 	}
 
 	for _, test := range checksumTests {
-		_, err := codes.NewCode(test.code)
+		_, err := codes.NewCodeFromHex(test.code)
 		t.Logf("%+v\n", err)
 		if err == nil {
 			if test.expectValid == false {

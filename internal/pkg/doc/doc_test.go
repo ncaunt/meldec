@@ -1,13 +1,14 @@
-package doc_test
+package doc
 
 import (
+	"encoding/base64"
+	"encoding/xml"
 	"io/ioutil"
+	"log"
 	"testing"
-
-	"github.com/ncaunt/meldec/internal/pkg/doc"
 )
 
-func TestXmlDocUnpack(t *testing.T) {
+func TestLSVDocUnpack(t *testing.T) {
 	expected := []string{
 		"fc62027a100110031213243408000000000000000079",
 		"fc62027a1002010f0000000000000000000000000000",
@@ -48,7 +49,127 @@ func TestXmlDocUnpack(t *testing.T) {
 		t.Error(err)
 	}
 
-	d, err := doc.NewDoc(b)
+	d, err := NewDoc(b)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(d.Codes) != len(expected) {
+		t.Errorf("expected %d codes, got %d", len(expected), len(d.Codes))
+	}
+
+	for i := 0; i < len(d.Codes); i++ {
+		if expected[i] != string(d.Codes[i]) {
+			t.Errorf("code %d: expected %s, got %s", i, expected[i], d.Codes[i])
+		}
+	}
+}
+
+func TestLSVDocMarshal(t *testing.T) {
+	rawCodes := []string{
+		"fc62027a100110031213243408000000000000000079",
+		"fc62027a1002010f0000000000000000000000000000",
+		"fc62027a10030080000000000000010000000000008e",
+		"fc62027a1004240000000000000000000000000000ea",
+		"fc62027a100500000000000000000600000000000007",
+		"fc62027a10060000000000000000000000000000000c",
+		"fc62027a100700000001000501010101000000000001",
+		"fc62027a100907d007d00dbf0dac1770388c64000027",
+		"fc62027a100b0802f0c4f0c40b09c40b5c0000000056",
+		"fc62027a100c0e42990ce49111c6ab0000000000001a",
+		"fc62027a100d09c40b09c40b09c40b09c40b000000a5",
+		"fc62027a100e09c40209c40200000000000000000066",
+		"fc62027a101000000000000000000000000000000002",
+		"fc62027a1011e700800050000000000000000000004a",
+		"fc62027a101301004b0017000000000000000000009c",
+		"fc62027a1014000000000000000000000011000000ed",
+		"fc62027a10150100ff010000010000000400000000f7",
+		"fc62027a1016000000000000000000000000000000fc",
+		"fc62027a1017000000000000000000000000000000fb",
+		"fc62027a1018000000000000000000000000000000fa",
+		"fc62027a1019000002000000000000000000000000f7",
+		"fc62027a101a000000000000000000000000000000f8",
+		"fc62027a101c000000000000000000000000000000f6",
+		"fc62027a101d000000000000000000000000000000f5",
+		"fc62027a101e000000000000000000000000000000f4",
+		"fc62027a101f000000000000000000000000000000f3",
+		"fc62027a1020000000000000000000000000000000f2",
+		"fc62027a102600000102000002138807d00dac0000bc",
+		"fc62027a1027000000000000000000000000000000eb",
+		"fc62027a1028000000000100010101000000000000e6",
+		"fc62027a102900000007d007d000000000000000003b",
+		"fc62027a10a1100311001738000000000107000000f6",
+	}
+
+	var codes []code
+	for _, c := range rawCodes {
+		codes = append(codes, code{"01", "01", code_data{"2016/05/18 10:41:53", []byte(c)}})
+	}
+
+	y := xmlCodes{
+		CmdType: "request",
+		Upload: upload{
+			Certification: certification{
+				Mac:    "00:1d:c9:92:ba:44",
+				Ip:     "192.168.1.115",
+				Serial: "1508275096557e0000",
+			},
+			CommInfo: comminfo{
+				"NORMAL",
+				"0000",
+			},
+			UnitInfo: unitinfo{
+				"ATW",
+				"01.00",
+			},
+			ProfileCode: profilecode{
+				"C9",
+				profilecode_data{
+					"fc7b027a10c903000100140200000000000000000016",
+				},
+			},
+			Info: info{
+				Rssi:     -88,
+				ItVer:    "03.00",
+				ItStatus: "NORMAL",
+				Version: info_version{
+					"04.00",
+					"3.5.9",
+					"02.00",
+				},
+				Position:     "unregistered",
+				PCycle:       "01",
+				RecordNumMax: "01",
+				Timeout:      "01",
+			},
+			Codes: codes,
+		},
+	}
+
+	xm, err := xml.Marshal(y)
+	if err != nil {
+		t.Error(err)
+	}
+	log.Printf("%s\n", xm)
+
+	lsv := base64.StdEncoding.EncodeToString(xm)
+
+	x := xmlWrapper{LSV: lsv}
+	xm, err = xml.Marshal(x)
+	if err != nil {
+		t.Error(err)
+	}
+	log.Printf("xml:\n%s\n", xm)
+
+}
+
+func TestCSVDocUnpack(t *testing.T) {
+	src := []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><CSV>PENPTU1BTkQ+PENNRFRZUEU+cmVzcG9uc2U8L0NNRFRZUEU+PFVQTE9BRD48SU5GTz48L0lORk8+PENPREU+PEdST1VQQ09ERT4zMjwvR1JPVVBDT0RFPjxEQVRBPjxWQUxVRT5GQzQxMDI3QTEwMzI4MDAwMDEwMjAwMDAwMjEzODgwNzA4MERBQzAwMDAxOTwvVkFMVUU+PC9EQVRBPjwvQ09ERT48Q09ERT48R1JPVVBDT0RFPjM1PC9HUk9VUENPREU+PERBVEE+PFZBTFVFPkZDNDEwMjdBMTAzNTAyMDAwMDA3MDgwMDAwMDAwMDAwMDAwMDAwMDAwMEVEPC9WQUxVRT48L0RBVEE+PC9DT0RFPjwvVVBMT0FEPjwvQ09NTUFORD4=</CSV>`)
+	expected := []string{
+		"FC41027A103280000102000002138807080DAC000019",
+		"FC41027A1035020000070800000000000000000000ED",
+	}
+	d, err := NewCSVDoc(src)
 	if err != nil {
 		t.Error(err)
 	}

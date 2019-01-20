@@ -8,7 +8,10 @@ import (
 )
 
 type Code struct {
-	Preamble  [5]byte
+	Start     byte
+	MsgType   byte
+	Header    [2]byte
+	DataLen   byte
 	GroupCode byte
 	Data      [15]byte
 	Checksum  byte
@@ -18,9 +21,12 @@ type decoderfn func([]byte) (map[string]interface{}, error)
 
 var groupCodes = map[byte]decoderfn{
 	0x01: groupCode01,
-	0x03: groupCode03,
+	0x02: groupCode02,
+	0x03: groupCodeGenericBytes(3),
 	0x04: groupCode04,
-	0x07: groupCode07,
+	0x05: groupCodeGenericBytes(5),
+	0x06: groupCodeGenericBytes(6),
+	0x07: groupCodeGenericBytes(7),
 	0x09: groupCode09,
 	0x0b: groupCode0b,
 	0x0c: groupCode0c,
@@ -29,7 +35,7 @@ var groupCodes = map[byte]decoderfn{
 	0x14: groupCode14,
 	0x15: groupCode15,
 	0x26: groupCode26,
-	0x28: groupCode28,
+	0x28: groupCodeGenericBytes(0x28),
 }
 
 var codeLen = 22 // length in bytes, when hex decoded
@@ -40,7 +46,7 @@ func NewCode(c []byte) (nc Code, err error) {
 		err = fmt.Errorf("code length incorrect: %d", cl)
 		return
 	}
-	if !verify_checksum(c, c[codeLen-1]) {
+	if !verify_checksum(c) {
 		err = fmt.Errorf("checksum invalid")
 		return
 	}
@@ -77,5 +83,23 @@ func (c Code) Decode() (m map[string]interface{}, err error) {
 	}
 
 	m, err = dec(c.Data[:])
+	return
+}
+
+func (c Code) ToHex() (b []byte, err error) {
+	bytes_, err := c.ToBytes()
+	if err != nil {
+		return
+	}
+	b = make([]byte, hex.EncodedLen(len(bytes_)))
+	hex.Encode(b, bytes_)
+	return
+}
+
+func (c Code) ToBytes() (b []byte, err error) {
+	var buf bytes.Buffer
+	// XXX: endianness for non x86 builds might need to change
+	err = binary.Write(&buf, binary.LittleEndian, c)
+	b = buf.Bytes()
 	return
 }

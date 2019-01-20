@@ -8,7 +8,7 @@ import (
 )
 
 func assertCode(c []byte, expected map[string]interface{}) (err error) {
-	code, err := codes.NewCode(c)
+	code, err := codes.NewCodeFromHex(c)
 	if err != nil {
 		return
 	}
@@ -45,7 +45,7 @@ func TestInvalidLength(t *testing.T) {
 	}
 
 	for _, test := range codeTests {
-		_, err := codes.NewCode(test.code)
+		_, err := codes.NewCodeFromHex(test.code)
 		t.Logf("%+v\n", err)
 		if err == nil {
 			if test.expectValid == false {
@@ -56,6 +56,22 @@ func TestInvalidLength(t *testing.T) {
 				t.Errorf("expected code to be valid but got error: %s", err)
 			}
 		}
+	}
+}
+
+func TestToHex(t *testing.T) {
+	src := []byte("fc62027a10011005120b24280800000000000000008b")
+	c, err := codes.NewCodeFromHex(src)
+	if err != nil {
+		t.Error(err)
+	}
+	got, err := c.ToHex()
+	if err != nil {
+		t.Error(err)
+	}
+	t.Logf("original is [%s] and received [%s]\n", src, got)
+	if string(got) != string(src) {
+		t.Errorf("expected [%s] but got [%s]\n", src, got)
 	}
 }
 
@@ -70,7 +86,23 @@ func TestGroupCode01(t *testing.T) {
 
 func TestGroupCode03(t *testing.T) {
 	code := []byte("fc62027a10030080000000000000020000000000008d")
-	expected := map[string]interface{}{"status/group3": int16(2)}
+	expected := map[string]interface{}{
+		"status/group3/Code1":  uint8(0),
+		"status/group3/Code2":  uint8(0x80),
+		"status/group3/Code3":  uint8(0),
+		"status/group3/Code4":  uint8(0),
+		"status/group3/Code5":  uint8(0),
+		"status/group3/Code6":  uint8(0),
+		"status/group3/Code7":  uint8(0),
+		"status/group3/Code8":  uint8(0),
+		"status/group3/Code9":  uint8(2),
+		"status/group3/Code10": uint8(0),
+		"status/group3/Code11": uint8(0),
+		"status/group3/Code12": uint8(0),
+		"status/group3/Code13": uint8(0),
+		"status/group3/Code14": uint8(0),
+		"status/group3/Code15": uint8(0),
+	}
 
 	if err := assertCode(code, expected); err != nil {
 		t.Error(err)
@@ -88,7 +120,23 @@ func TestGroupCode04(t *testing.T) {
 
 func TestGroupCode07(t *testing.T) {
 	code := []byte("fc62027a100700000001000501010101000000000001")
-	expected := map[string]interface{}{"status/group7a": int16(1), "status/group7b": int16(5)}
+	expected := map[string]interface{}{
+		"status/group7/Code1":  uint8(0),
+		"status/group7/Code2":  uint8(0),
+		"status/group7/Code3":  uint8(0),
+		"status/group7/Code4":  uint8(1),
+		"status/group7/Code5":  uint8(0),
+		"status/group7/Code6":  uint8(5),
+		"status/group7/Code7":  uint8(1),
+		"status/group7/Code8":  uint8(1),
+		"status/group7/Code9":  uint8(1),
+		"status/group7/Code10": uint8(1),
+		"status/group7/Code11": uint8(0),
+		"status/group7/Code12": uint8(0),
+		"status/group7/Code13": uint8(0),
+		"status/group7/Code14": uint8(0),
+		"status/group7/Code15": uint8(0),
+	}
 
 	if err := assertCode(code, expected); err != nil {
 		t.Error(err)
@@ -106,7 +154,7 @@ func TestGroupCode09(t *testing.T) {
 
 func TestGroupCode0b(t *testing.T) {
 	code := []byte("fc62027a100b0802f0c4f0c40b09c40b6c0000000046")
-	expected := map[string]interface{}{"temperatures/indoor/zone1": 20.5, "temperatures/indoor/zone2": -39.0, "temperatures/outdoor/front": int8(14)}
+	expected := map[string]interface{}{"temperatures/indoor/zone1": 20.5, "status/group11/code2": -39.0, "temperatures/indoor/zone2": -39.0, "status/group11/code4": int16(2825), "status/group11/code5": int16(-15349), "temperatures/outdoor/front": int8(14)}
 
 	if err := assertCode(code, expected); err != nil {
 		t.Error(err)

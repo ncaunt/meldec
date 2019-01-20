@@ -9,11 +9,11 @@ import (
 
 type Stat struct {
 	Name, Value string
+	Error       error
 }
 
 type Decoder interface {
-	Decode(codes.Code) error
-	Stats() chan Stat
+	Decode(codes.Code) ([]Stat, error)
 }
 
 type StatDecoder struct {
@@ -37,13 +37,16 @@ type groupDecoder struct {
 	decode func([]byte) (map[string]interface{}, error)
 }
 
-func (dec *StatDecoder) Decode(code codes.Code) (err error) {
+// c is number of values decoded
+func (dec *StatDecoder) Decode(code codes.Code) (stats []Stat, err error) {
 	m, err := code.Decode()
 	if err != nil {
 		return
 	}
+
 	for k, v := range m {
 		var val string
+		var e error
 		switch v.(type) {
 		case byte:
 			val = strconv.Itoa(int(v.(byte)))
@@ -56,10 +59,10 @@ func (dec *StatDecoder) Decode(code codes.Code) (err error) {
 		case float64:
 			val = strconv.FormatFloat(v.(float64), 'f', 1, 64)
 		default:
-			return fmt.Errorf("unknown type for key %s: %T", k, v)
+			e = fmt.Errorf("unhandled type %T", v)
+			val = ""
 		}
-		s := Stat{k, val}
-		dec.publish(s)
+		stats = append(stats, Stat{k, val, e})
 	}
 
 	/*
