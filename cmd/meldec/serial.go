@@ -9,7 +9,7 @@ import (
 )
 
 type SerialComm interface {
-	Init()
+	Init() error
 	Send([]byte) ([]byte, error)
 }
 
@@ -27,7 +27,7 @@ func NewTTY(conf *serial.Config) (tty *TTY, err error) {
 	return
 }
 
-func (s *TTY) Init() {
+func (s *TTY) Init() (err error) {
 	// initialisation codes
 	// these must be sent first (at least after each HP power cycle) or the HP will not respond
 	cmds := [][]byte{
@@ -54,11 +54,13 @@ func (s *TTY) Init() {
 			decoded[21] = sum(decoded[1:21])
 		*/
 		decoded := x
-		_, err := s.Send(decoded)
+		_, err = s.Send(decoded)
 		if err != nil {
-			log.Fatal(err)
+			return
 		}
 	}
+
+	return
 }
 
 func (s *TTY) Send(data []byte) (c []byte, err error) {

@@ -6,6 +6,8 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/ncaunt/meldec/internal/pkg/decoder"
@@ -13,6 +15,11 @@ import (
 	"github.com/ncaunt/meldec/internal/pkg/doc"
 	"github.com/ncaunt/meldec/internal/pkg/reporter"
 	"github.com/ncaunt/meldec/internal/pkg/uploader"
+	"github.com/oklog/run"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/version"
 	"github.com/tarm/serial"
 )
 
@@ -39,13 +46,43 @@ func main() {
 
 	r, err := reporter.NewMQTTReporter()
 
-	ticker := time.Tick(60 * time.Second)
-	u := uploader.NewHTTPUploader("http://leswifidata.meuk.mee.com/upload")
-	loop(ticker, t, r, u)
+	metrics := prometheus.NewRegistry()
+	metrics.MustRegister(
+		version.NewCollector("meldec"),
+		prometheus.NewGoCollector(),
+		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+	)
+	var g run.Group
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(metrics, promhttp.HandlerOpts{}))
+	httpBindAddr := "0.0.0.0:9100"
+	l, err := net.Listen("tcp", httpBindAddr)
+	if err != nil {
+		log.Fatal(errors.Wrap(err, "listen metrics address"))
+	}
+
+	g.Add(func() error {
+		log.Fatal(errors.Wrap(http.Serve(l, mux), "serve metrics"))
+		return nil
+	}, func(error) {
+	})
+
+	ticker := time.NewTicker(60 * time.Second)
+	g.Add(func() error {
+		u := uploader.NewHTTPUploader("http://leswifidata.meuk.mee.com/upload")
+		return loop(ticker.C, t, r, u)
+	}, func(error) {
+		ticker.Stop()
+	})
+
+	g.Run()
 }
 
-func loop(ticker <-chan time.Time, t SerialComm, r reporter.Reporter, u uploader.Uploader) {
-	t.Init()
+func loop(ticker <-chan time.Time, t SerialComm, r reporter.Reporter, u uploader.Uploader) (err error) {
+	if err = t.Init(); err != nil {
+		return
+	}
+
 	d := decoder.NewDecoder()
 	gcs := []byte{
 		0x01,
@@ -96,7 +133,7 @@ func loop(ticker <-chan time.Time, t SerialComm, r reporter.Reporter, u uploader
 			// send packet and await response
 			c, err := t.Send(pkt)
 			if err != nil {
-				log.Fatal(err)
+				log.Print(err)
 			}
 
 			// HP might not return data for a groupcode so ignore it
@@ -106,11 +143,11 @@ func loop(ticker <-chan time.Time, t SerialComm, r reporter.Reporter, u uploader
 			log.Printf("received\t[% x]\n", c)
 			c2, err := codes.NewCode(c)
 			if err != nil {
-				log.Fatal(err)
+				log.Print(err)
 			}
 			stats, err := d.Decode(c2)
 			if err != nil {
-				log.Fatal(err)
+				log.Print(err)
 			}
 
 			err = u.AddCode(c2)
@@ -140,6 +177,7 @@ func loop(ticker <-chan time.Time, t SerialComm, r reporter.Reporter, u uploader
 		}
 
 	}
+	return
 }
 
 func handler(r io.Reader) (c []codes.Code, err error) {

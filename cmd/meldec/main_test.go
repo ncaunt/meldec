@@ -13,8 +13,9 @@ type FakeTTY struct {
 	c chan []byte
 }
 
-func (f *FakeTTY) Init() {
+func (f *FakeTTY) Init() error {
 	//f.c <- []byte{0xBA}
+	return nil
 }
 func (f *FakeTTY) Send(d []byte) (c []byte, err error) {
 	f.c <- d
