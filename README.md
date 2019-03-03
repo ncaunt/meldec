@@ -51,11 +51,11 @@ Have at least 3 terminals ready (`screen` or `tmux` is useful here). You'll need
 
 Execute these commands in order (replacing variables as necessary):
 ```shell
-airmon-ng start $IFACE																# start interface in monitor mode
-airodump-ng --channel $CHANNEL $MONITOR_IFACE					# capture packets on monitor interface (optional; new terminal, keep running
-airtun-ng -p $PSK -a $AP_MAC -e $SSID $MONITOR_IFACE	# set up decrypted tunnel )new terminal, keep running)
-ifconfig at0 up																				# bring up tunnel interface
-aireplay-ng -a $AP_MAC -c $MELCLOUD_MAC -0 1 $MONITOR_IFACE		# send spoofed de-authenticate packets to MELCloud device
+airmon-ng start $IFACE                                # start interface in monitor mode
+airodump-ng --channel $CHANNEL $MONITOR_IFACE         # capture packets on monitor interface (optional; new terminal, keep running
+airtun-ng -p $PSK -a $AP_MAC -e $SSID $MONITOR_IFACE  # set up decrypted tunnel )new terminal, keep running)
+ifconfig at0 up                                       # bring up tunnel interface
+aireplay-ng -a $AP_MAC -c $MELCLOUD_MAC -0 1 $MONITOR_IFACE   # send spoofed de-authenticate packets to MELCloud device
 ```
 At this point the terminal in which airtun-ng is running should report something like this:
 ```shell
