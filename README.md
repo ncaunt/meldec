@@ -1,5 +1,7 @@
 # MELCloud Data Decoder (`meldec`)
 
+[![Gitter](https://badges.gitter.im/ncaunt/meldec.svg)](https://gitter.im/ncaunt/meldec?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 ## Introduction
 
 `meldec` is designed to decode data read from a Mitsubishi Ecodan heat pump flow controller unit. It can act as an almost-complete open source replacement for the MELCloud wifi data reporter. Direct communication with a heat pump is possible over a serial connection and the software can also be used as an HTTP proxy and supports packet capture for passive network sniffing.
