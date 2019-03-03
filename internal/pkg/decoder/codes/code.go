@@ -23,7 +23,7 @@ var groupCodes = map[byte]decoderfn{
 	0x01: groupCode01,
 	0x02: groupCode02,
 	0x03: groupCodeGenericBytes(3),
-	0x04: groupCode04,
+	0x04: groupCodeGenericBytes(4),
 	0x05: groupCodeGenericBytes(5),
 	0x06: groupCodeGenericBytes(6),
 	0x07: groupCodeGenericBytes(7),
