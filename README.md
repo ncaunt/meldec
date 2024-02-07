@@ -10,9 +10,10 @@ An `MQTT` server is required in order to publish decoded data.
 
 ## Building
 Tested with golang up to version 1.11.5.
-
 Build the serial comms binary:
 ```shell
+go mod init github.com/ncaunt/meldec
+go mod tidy
 go build ./cmd/meldec
 ```
 
